@@ -15,7 +15,7 @@ try:
 except Exception:
     WORDCLOUD_AVAILABLE = False
 
-st.set_page_config(page_title="수업 헷갈렸던 영어 키워드", layout="centered")
+st.set_page_config(page_title="Exit Ticket Live Board", layout="centered")
 
 st.title("Exit Ticket Live Board")
 
@@ -25,6 +25,7 @@ DB_PATH = Path(__file__).parent / "keywords.db"
 def init_db():
     conn = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL;")
+    # note 컬럼 추가 (부연 설명 저장)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS keywords (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,6 +35,7 @@ def init_db():
             class_num INTEGER NOT NULL DEFAULT 1,
             student_no INTEGER NOT NULL DEFAULT 1,
             student_name TEXT NOT NULL DEFAULT '',
+            note TEXT NOT NULL DEFAULT '',
             ts TEXT NOT NULL
         )
     """)
@@ -50,31 +52,48 @@ def init_db():
         conn.execute("ALTER TABLE keywords ADD COLUMN student_no INTEGER DEFAULT 1")
     if "student_name" not in cols:
         conn.execute("ALTER TABLE keywords ADD COLUMN student_name TEXT DEFAULT ''")
+    if "note" not in cols:
+        conn.execute("ALTER TABLE keywords ADD COLUMN note TEXT DEFAULT ''")
     conn.commit()
     return conn
 
 conn = init_db()
 
-def add_keyword(kw: str, category: str, grade: str, class_num: int, student_no: int, student_name: str):
+def add_keyword(kw: str, category: str, grade: str, class_num: int, student_no: int, student_name: str, note: str):
     ts = datetime.utcnow().isoformat()
     with conn:
         conn.execute(
-            "INSERT INTO keywords (keyword, category, grade, class_num, student_no, student_name, ts) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (kw, category, grade, class_num, student_no, student_name, ts)
+            "INSERT INTO keywords (keyword, category, grade, class_num, student_no, student_name, note, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (kw, category, grade, class_num, student_no, student_name, note, ts)
         )
 
 def get_keywords(limit: int = 500, category: str | None = None):
     cur = conn.cursor()
     if category and category != "All":
-        cur.execute("SELECT id, keyword, category, grade, class_num, student_no, student_name, ts FROM keywords WHERE category = ? ORDER BY id DESC LIMIT ?", (category, limit))
+        cur.execute("SELECT id, keyword, category, grade, class_num, student_no, student_name, note, ts FROM keywords WHERE category = ? ORDER BY id DESC LIMIT ?", (category, limit))
     else:
-        cur.execute("SELECT id, keyword, category, grade, class_num, student_no, student_name, ts FROM keywords ORDER BY id DESC LIMIT ?", (limit,))
+        cur.execute("SELECT id, keyword, category, grade, class_num, student_no, student_name, note, ts FROM keywords ORDER BY id DESC LIMIT ?", (limit,))
     rows = cur.fetchall()
     return list(reversed(rows))
+
+# 새: 키워드로 부연설명 조회
+def get_explanations_by_keyword(keyword: str, category: str | None = None, limit: int = 200):
+    cur = conn.cursor()
+    if category and category != "All":
+        cur.execute("""SELECT student_name, class_num, student_no, note, ts
+                       FROM keywords WHERE keyword = ? AND category = ? ORDER BY id DESC LIMIT ?""",
+                    (keyword, category, limit))
+    else:
+        cur.execute("""SELECT student_name, class_num, student_no, note, ts
+                       FROM keywords WHERE keyword = ? ORDER BY id DESC LIMIT ?""",
+                    (keyword, limit))
+    return cur.fetchall()
 
 # 세션 상태 초기화 (입력창 제어용)
 if "keyword_input" not in st.session_state:
     st.session_state["keyword_input"] = ""
+if "note_input" not in st.session_state:
+    st.session_state["note_input"] = ""
 if "category_select" not in st.session_state:
     st.session_state["category_select"] = "Vocabulary"
 if "grade_select" not in st.session_state:
@@ -122,9 +141,12 @@ category = st.selectbox("입력할 카테고리 선택", ["Vocabulary", "Grammar
 # 2) 키워드 입력 (입력 파트)
 input_key = "keyword_input"
 keyword = st.text_input("질문 키워드 입력", key=input_key)
+# 부연 설명 입력란(문장)
+note = st.text_area("부연 설명 (선택, 문장으로 입력)", key="note_input", height=80, placeholder="예: 특정 문장에서 쓰임이 헷갈려요. 문장 전체를 적어주세요.")
 
 def submit_callback():
     kw = st.session_state.get(input_key, "").strip()
+    note_text = st.session_state.get("note_input", "").strip()
     cat = st.session_state.get("category_select", "Else")
     grade_val = st.session_state.get("grade_select", "2학년")
     class_val = st.session_state.get("class_select", "1반")
@@ -139,9 +161,10 @@ def submit_callback():
         student_no = 1
     student_name_val = st.session_state.get("student_name", "").strip()
     if kw:
-        add_keyword(kw, cat, grade_val, class_num, student_no, student_name_val)
+        add_keyword(kw, cat, grade_val, class_num, student_no, student_name_val, note_text)
         st.session_state[input_key] = ""
-        st.session_state["msg"] = f"제출됨: [{cat}] {kw} ({grade_val} {class_num}반 {student_no}번 {student_name_val})"
+        st.session_state["note_input"] = ""
+        st.session_state["msg"] = f"제출됨: [{cat}] {kw}"
         st.session_state["msg_type"] = "success"
     else:
         st.session_state["msg"] = "먼저 입력해주세요."
@@ -213,7 +236,8 @@ st.markdown("---")
 st.subheader(f"키워드 빈도 분석")
 
 # 키워드 문자열만 추출 (필터 적용된 items 사용)
-keywords = [kw for (_id, kw, _cat, _grade, _class, _no, _name, _ts) in items]
+# items는 get_keywords(...)로부터 (id, keyword, category, grade, class_num, student_no, student_name, note, ts)
+keywords = [kw for (_id, kw, _cat, _grade, _class, _no, _name, _note, _ts) in items]
 
 if keywords:
     freq = Counter(keywords)
@@ -228,9 +252,41 @@ if keywords:
         wc.generate_from_frequencies(freq_dict)
         img = wc.to_image()
         st.image(img, use_container_width=True)
+
+        # 클릭 가능한 단어 버튼(워드클라우드 아래)
+        st.markdown("**워드클라우드 단어(클릭하면 부연설명 표시)**")
+        word_options = df["keyword"].tolist()
+        # 상위 30개만 버튼으로 표시
+        max_buttons = min(30, len(word_options))
+        cols = st.columns(6)
+        if "selected_word" not in st.session_state:
+            st.session_state["selected_word"] = ""
+
+        for i, w in enumerate(word_options[:max_buttons]):
+            col = cols[i % 6]
+            if col.button(w):
+                st.session_state["selected_word"] = w
+
+        # 선택 단어가 있으면 부연설명 표시
+        if st.session_state.get("selected_word"):
+            selected_word = st.session_state["selected_word"]
+            st.markdown(f"**선택된 단어:** {selected_word}")
+            view_cat = st.session_state.get("view_category", None) if "view_category" in st.session_state else None
+            explanations = get_explanations_by_keyword(selected_word, category=view_cat)
+            if explanations:
+                st.markdown("해당 단어를 입력한 학생들의 부연 설명:")
+                for ex in explanations:
+                    name, class_num, stu_no, note_text, ts = ex
+                    student_label = f"{name}" if name else f"{class_num}반 {stu_no}번"
+                    note_display = note_text if note_text else "(부연 설명 없음)"
+                    st.write(f"- {student_label} — {note_display}")
+            else:
+                st.info("해당 단어에 대한 부연 설명이 없습니다.")
+            # 선택 초기화 버튼
+            if st.button("선택 초기화"):
+                st.session_state["selected_word"] = ""
     else:
         st.info("워드클라우드를 보려면 'wordcloud'와 'pillow' 패키지를 설치하세요.\n터미널에서: pip3 install wordcloud pillow")
-
     # 2) 빈도순 막대그래프 (왼쪽=최대 -> 오른쪽=최소)
     st.markdown("#### 빈도순 막대그래프")
     df_chart = df.copy()
@@ -260,22 +316,17 @@ else:
 # - genre chips -> '반' 멀티셀렉트(chips 스타일)
 # - year slider -> 주차(week) 슬라이더
 # -----------------------------
+# ...existing code...
 st.markdown("---")
 st.subheader("제출 데이터 탐색 (샘플 템플릿)")
 
 # DB에서 전체 항목 불러오기
 all_items = get_keywords(limit=2000, category=None)  # 전체 카테고리
 
-# DataFrame으로 변환
+# DataFrame으로 변환 (dt 컬럼으로 일시 파싱)
 rows = []
 for r in all_items:
     # r: (id, keyword, category, grade, class_num, student_no, student_name, ts)
-    try:
-        dt = datetime.fromisoformat(r[7])
-        week = dt.isocalendar().week
-    except Exception:
-        dt = None
-        week = None
     rows.append({
         "id": r[0],
         "keyword": r[1],
@@ -285,22 +336,57 @@ for r in all_items:
         "student_no": r[5],
         "student_name": r[6],
         "ts": r[7],
-        "week": week
     })
 df_all = pd.DataFrame(rows)
 
 if df_all.empty:
     st.info("제출된 항목이 없습니다. 먼저 키워드를 제출해 주세요.")
 else:
-    # 반(chips 스타일) 멀티셀렉트
-    class_options = sorted(df_all["class_num"].dropna().unique().astype(int).tolist())
+    # ts -> datetime 변환
+    df_all["dt"] = pd.to_datetime(df_all["ts"], errors="coerce")
+
+    # 학기(또는 기준) 시작 주를 데이터의 가장 빠른 제출일의 주 월요일로 잡아 주차(1~17) 계산
+    from datetime import timedelta
+    min_dt = df_all["dt"].min()
+    if pd.isna(min_dt):
+        term_start = None
+    else:
+        # 해당 날짜의 주 월요일을 시작(주차 1)으로 사용
+        term_start = (min_dt - timedelta(days=min_dt.weekday())).date()
+
+    def compute_academic_week(dt):
+        if pd.isna(dt) or term_start is None:
+            return None
+        days = (dt.date() - term_start).days
+        week = (days // 7) + 1
+        # 범위를 1~17로 고정
+        if week < 1:
+            return 1
+        if week > 17:
+            return 17
+        return int(week)
+
+    df_all["week"] = df_all["dt"].apply(compute_academic_week)
+
+    # ...existing code...
+    # 반(chips 스타일) 멀티셀렉트 — 항상 1~12반 선택 가능하도록
+    all_classes = list(range(1, 13))  # 1반 ~ 12반 고정 목록
+    # 데이터에 실제로 존재하는 반은 따로 확인할 수 있지만, 옵션은 항상 1~12로 고정
+    class_options = all_classes
     # 기본: 모두 선택
     class_sel = st.multiselect("반 필터 (chips)", class_options, default=class_options, format_func=lambda x: f"{x}반")
+# ...existing code...
 
-    # 주차 슬라이더 (범위)
-    min_week = int(df_all["week"].dropna().min()) if not df_all["week"].dropna().empty else 1
-    max_week = int(df_all["week"].dropna().max()) if not df_all["week"].dropna().empty else 52
-    week_range = st.slider("주차 범위", 1, 52, (min_week, max_week))
+    # 주차 슬라이더 (범위 1주차 ~ 17주차)
+    min_week = 1
+    max_week = 17
+    # 데이터 기반 기본값
+    data_weeks = df_all["week"].dropna().astype(int)
+    data_min = int(data_weeks.min()) if not data_weeks.empty else min_week
+    data_max = int(data_weeks.max()) if not data_weeks.empty else max_week
+    default_start = max(min_week, data_min)
+    default_end = min(max_week, data_max)
+    week_range = st.slider("주차 범위 (1~17주)", min_week, max_week, (default_start, default_end))
 
     # 필터 적용
     df_filtered = df_all.copy()
@@ -312,78 +398,41 @@ else:
     st.write(f"결과 항목: {len(df_filtered)}개")
 
     if not df_filtered.empty:
-        # 키워드별 집계 (내림차순)
-        df_counts = df_filtered.groupby("keyword").size().reset_index(name="count")
-        df_counts = df_counts.sort_values("count", ascending=False).reset_index(drop=True)
+        # 카테고리별/주차별 최다 빈도 키워드 표 생성
+        categories = ["Vocabulary", "Grammar", "Reading", "Else"]
+        weeks = list(range(week_range[0], week_range[1] + 1))
 
-        # 파이 차트 (상위 몇개만)
-        top_n = st.slider("파이 차트에 표시할 상위 개수", 3, min(20, max(3, len(df_counts))), value=min(6, len(df_counts)))
-        df_pie = df_counts.head(top_n)
+        top_map = {}
+        for w in weeks:
+            row_vals = {}
+            for c in categories:
+                sub = df_filtered[(df_filtered["week"] == w) & (df_filtered["category"] == c)]
+                if not sub.empty:
+                    kw_counts = sub.groupby("keyword").size().reset_index(name="count").sort_values("count", ascending=False)
+                    top = kw_counts.iloc[0]
+                    row_vals[c] = f"{top['keyword']} ({int(top['count'])})"
+                else:
+                    row_vals[c] = ""
+            top_map[w] = row_vals
 
-        pie = (
-            alt.Chart(df_pie)
-            .mark_arc(innerRadius=40)
-            .encode(
-                theta=alt.Theta("count:Q"),
-                color=alt.Color("keyword:N", legend=alt.Legend(title="키워드")),
-                tooltip=["keyword", "count"]
-            )
-            .properties(height=300)
-        )
-        st.altair_chart(pie, use_container_width=True)
-
-        # 막대그래프: 왼쪽=빈도 높은 순서
-        order = df_counts["keyword"].tolist()
-        bar = (
-            alt.Chart(df_counts)
-            .mark_bar()
-            .encode(
-                x=alt.X("keyword:N", sort=order, title="키워드"),
-                y=alt.Y("count:Q", title="빈도"),
-                tooltip=["keyword", "count"]
-            )
-            .properties(height=300)
-        )
-        st.altair_chart(bar, use_container_width=True)
-
-        # 테이블: 상위 항목과 예시 제출(최신)
-        st.markdown("#### 키워드별 샘플 제출 (최신)")
-        for _, row in df_counts.head(20).iterrows():
-            kw = row["keyword"]
-            cnt = row["count"]
-            examples = df_filtered[df_filtered["keyword"] == kw].sort_values("id", ascending=False).head(3)
-            example_texts = []
-            for _, ex in examples.iterrows():
-                example_texts.append(f"{int(ex['grade']) if isinstance(ex['grade'], int) else ex['grade']} {int(ex['class_num']) if not pd.isna(ex['class_num']) else ''}반 — {ex['student_name'] or str(ex['student_no'])}")
-            st.write(f"{kw} — {cnt}회 — 예: {', '.join(example_texts)}")
-
-        # 원하면 전체 결과 테이블도 표시
-        if st.checkbox("필터된 원본 데이터 보기"):
-            st.dataframe(df_filtered.sort_values("ts", ascending=False))
+        table_df = pd.DataFrame.from_dict(top_map, orient="index")[categories]
+        table_df.index.name = "주차"
+        st.markdown("#### 주차 × 카테고리 별 최다 빈도 키워드")
+        st.dataframe(table_df)
     else:
         st.info("필터 조건에 맞는 항목이 없습니다.")
 # ...existing code...
-# -----------------------------
-# 샘플 탐색 섹션: movies 템플릿 변형
-# - genre chips -> '반' 멀티셀렉트(chips 스타일)
-# - year slider -> 주차(week) 슬라이더
-# -----------------------------
+# ...existing code...
 st.markdown("---")
 st.subheader("제출 데이터 탐색 (샘플 템플릿)")
 
 # DB에서 전체 항목 불러오기
 all_items = get_keywords(limit=2000, category=None)  # 전체 카테고리
 
-# DataFrame으로 변환
+# DataFrame으로 변환 (dt 컬럼으로 일시 파싱)
 rows = []
 for r in all_items:
     # r: (id, keyword, category, grade, class_num, student_no, student_name, ts)
-    try:
-        dt = datetime.fromisoformat(r[7])
-        week = dt.isocalendar().week
-    except Exception:
-        dt = None
-        week = None
     rows.append({
         "id": r[0],
         "keyword": r[1],
@@ -393,22 +442,52 @@ for r in all_items:
         "student_no": r[5],
         "student_name": r[6],
         "ts": r[7],
-        "week": week
     })
 df_all = pd.DataFrame(rows)
 
 if df_all.empty:
     st.info("제출된 항목이 없습니다. 먼저 키워드를 제출해 주세요.")
 else:
+    # ts -> datetime 변환
+    df_all["dt"] = pd.to_datetime(df_all["ts"], errors="coerce")
+
+    # 학기(또는 기준) 시작 주를 데이터의 가장 빠른 제출일의 주 월요일로 잡아 주차(1~17) 계산
+    from datetime import timedelta
+    min_dt = df_all["dt"].min()
+    if pd.isna(min_dt):
+        term_start = None
+    else:
+        # 해당 날짜의 주 월요일을 시작(주차 1)으로 사용
+        term_start = (min_dt - timedelta(days=min_dt.weekday())).date()
+
+    def compute_academic_week(dt):
+        if pd.isna(dt) or term_start is None:
+            return None
+        days = (dt.date() - term_start).days
+        week = (days // 7) + 1
+        # 범위를 1~17로 고정
+        if week < 1:
+            return 1
+        if week > 17:
+            return 17
+        return int(week)
+
+    df_all["week"] = df_all["dt"].apply(compute_academic_week)
+
     # 반(chips 스타일) 멀티셀렉트
     class_options = sorted(df_all["class_num"].dropna().unique().astype(int).tolist())
-    # 기본: 모두 선택
     class_sel = st.multiselect("반 필터 (chips)", class_options, default=class_options, format_func=lambda x: f"{x}반")
 
-    # 주차 슬라이더 (범위)
-    min_week = int(df_all["week"].dropna().min()) if not df_all["week"].dropna().empty else 1
-    max_week = int(df_all["week"].dropna().max()) if not df_all["week"].dropna().empty else 52
-    week_range = st.slider("주차 범위", 1, 52, (min_week, max_week))
+    # 주차 슬라이더 (범위 1주차 ~ 17주차)
+    min_week = 1
+    max_week = 17
+    # 데이터 기반 기본값
+    data_weeks = df_all["week"].dropna().astype(int)
+    data_min = int(data_weeks.min()) if not data_weeks.empty else min_week
+    data_max = int(data_weeks.max()) if not data_weeks.empty else max_week
+    default_start = max(min_week, data_min)
+    default_end = min(max_week, data_max)
+    week_range = st.slider("주차 범위 (1~17주)", min_week, max_week, (default_start, default_end))
 
     # 필터 적용
     df_filtered = df_all.copy()
@@ -420,54 +499,27 @@ else:
     st.write(f"결과 항목: {len(df_filtered)}개")
 
     if not df_filtered.empty:
-        # 키워드별 집계 (내림차순)
-        df_counts = df_filtered.groupby("keyword").size().reset_index(name="count")
-        df_counts = df_counts.sort_values("count", ascending=False).reset_index(drop=True)
+        # 카테고리별/주차별 최다 빈도 키워드 표 생성
+        categories = ["Vocabulary", "Grammar", "Reading", "Else"]
+        weeks = list(range(week_range[0], week_range[1] + 1))
 
-        # 파이 차트 (상위 몇개만)
-        top_n = st.slider("파이 차트에 표시할 상위 개수", 3, min(20, max(3, len(df_counts))), value=min(6, len(df_counts)))
-        df_pie = df_counts.head(top_n)
+        top_map = {}
+        for w in weeks:
+            row_vals = {}
+            for c in categories:
+                sub = df_filtered[(df_filtered["week"] == w) & (df_filtered["category"] == c)]
+                if not sub.empty:
+                    kw_counts = sub.groupby("keyword").size().reset_index(name="count").sort_values("count", ascending=False)
+                    top = kw_counts.iloc[0]
+                    row_vals[c] = f"{top['keyword']} ({int(top['count'])})"
+                else:
+                    row_vals[c] = ""
+            top_map[w] = row_vals
 
-        pie = (
-            alt.Chart(df_pie)
-            .mark_arc(innerRadius=40)
-            .encode(
-                theta=alt.Theta("count:Q"),
-                color=alt.Color("keyword:N", legend=alt.Legend(title="키워드")),
-                tooltip=["keyword", "count"]
-            )
-            .properties(height=300)
-        )
-        st.altair_chart(pie, use_container_width=True)
-
-        # 막대그래프: 왼쪽=빈도 높은 순서
-        order = df_counts["keyword"].tolist()
-        bar = (
-            alt.Chart(df_counts)
-            .mark_bar()
-            .encode(
-                x=alt.X("keyword:N", sort=order, title="키워드"),
-                y=alt.Y("count:Q", title="빈도"),
-                tooltip=["keyword", "count"]
-            )
-            .properties(height=300)
-        )
-        st.altair_chart(bar, use_container_width=True)
-
-        # 테이블: 상위 항목과 예시 제출(최신)
-        st.markdown("#### 키워드별 샘플 제출 (최신)")
-        for _, row in df_counts.head(20).iterrows():
-            kw = row["keyword"]
-            cnt = row["count"]
-            examples = df_filtered[df_filtered["keyword"] == kw].sort_values("id", ascending=False).head(3)
-            example_texts = []
-            for _, ex in examples.iterrows():
-                example_texts.append(f"{int(ex['grade']) if isinstance(ex['grade'], int) else ex['grade']} {int(ex['class_num']) if not pd.isna(ex['class_num']) else ''}반 — {ex['student_name'] or str(ex['student_no'])}")
-            st.write(f"{kw} — {cnt}회 — 예: {', '.join(example_texts)}")
-
-        # 원하면 전체 결과 테이블도 표시
-        if st.checkbox("필터된 원본 데이터 보기"):
-            st.dataframe(df_filtered.sort_values("ts", ascending=False))
+        table_df = pd.DataFrame.from_dict(top_map, orient="index")[categories]
+        table_df.index.name = "주차"
+        st.markdown("#### 주차 × 카테고리 별 최다 빈도 키워드")
+        st.dataframe(table_df)
     else:
         st.info("필터 조건에 맞는 항목이 없습니다.")
 # ...existing code...
