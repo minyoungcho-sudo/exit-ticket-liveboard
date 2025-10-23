@@ -163,6 +163,31 @@ if st.session_state.get("msg"):
 # 입력 파트 종료 — 결과 파트는 아래에서 별도로 표시
 st.markdown("---")
 
+# 보기용 카테고리 선택 전에 전체 카테고리별 제출 수를 파이 차트로 표시
+def get_category_counts():
+    cur = conn.cursor()
+    cur.execute("SELECT category, COUNT(*) FROM keywords GROUP BY category")
+    rows = cur.fetchall()
+    return rows
+
+counts = get_category_counts()
+if counts:
+    df_counts = pd.DataFrame(counts, columns=["category", "count"])
+    pie = (
+        alt.Chart(df_counts)
+        .mark_arc(innerRadius=50)
+        .encode(
+            theta=alt.Theta("count:Q", title="제출 수"),
+            color=alt.Color("category:N", legend=alt.Legend(title="카테고리")),
+            tooltip=["category", "count"]
+        )
+        .properties(width=350, height=350)
+    )
+    st.markdown("### 전체 카테고리별 제출 수")
+    st.altair_chart(pie, use_container_width=False)
+else:
+    st.info("아직 제출된 항목이 없어 카테고리 통계를 표시할 수 없습니다.")
+
 # 보기용(필터) 카테고리 선택 — 결과 파트 시작
 view_category = st.selectbox("보기용 카테고리 선택", ["All", "Vocabulary", "Grammar", "Reading", "Else"], index=0, key="view_category")
 
@@ -227,4 +252,222 @@ if keywords:
         st.write(f"{idx+1}. {row['keyword']} — {row['count']}")
 else:
     st.info("집계할 키워드가 없습니다. 먼저 키워드를 제출해 주세요.")
+# ...existing code...
+
+# ...existing code...
+# -----------------------------
+# 샘플 탐색 섹션: movies 템플릿 변형
+# - genre chips -> '반' 멀티셀렉트(chips 스타일)
+# - year slider -> 주차(week) 슬라이더
+# -----------------------------
+st.markdown("---")
+st.subheader("제출 데이터 탐색 (샘플 템플릿)")
+
+# DB에서 전체 항목 불러오기
+all_items = get_keywords(limit=2000, category=None)  # 전체 카테고리
+
+# DataFrame으로 변환
+rows = []
+for r in all_items:
+    # r: (id, keyword, category, grade, class_num, student_no, student_name, ts)
+    try:
+        dt = datetime.fromisoformat(r[7])
+        week = dt.isocalendar().week
+    except Exception:
+        dt = None
+        week = None
+    rows.append({
+        "id": r[0],
+        "keyword": r[1],
+        "category": r[2],
+        "grade": r[3],
+        "class_num": r[4],
+        "student_no": r[5],
+        "student_name": r[6],
+        "ts": r[7],
+        "week": week
+    })
+df_all = pd.DataFrame(rows)
+
+if df_all.empty:
+    st.info("제출된 항목이 없습니다. 먼저 키워드를 제출해 주세요.")
+else:
+    # 반(chips 스타일) 멀티셀렉트
+    class_options = sorted(df_all["class_num"].dropna().unique().astype(int).tolist())
+    # 기본: 모두 선택
+    class_sel = st.multiselect("반 필터 (chips)", class_options, default=class_options, format_func=lambda x: f"{x}반")
+
+    # 주차 슬라이더 (범위)
+    min_week = int(df_all["week"].dropna().min()) if not df_all["week"].dropna().empty else 1
+    max_week = int(df_all["week"].dropna().max()) if not df_all["week"].dropna().empty else 52
+    week_range = st.slider("주차 범위", 1, 52, (min_week, max_week))
+
+    # 필터 적용
+    df_filtered = df_all.copy()
+    if class_sel:
+        df_filtered = df_filtered[df_filtered["class_num"].isin(class_sel)]
+    df_filtered = df_filtered[df_filtered["week"].between(week_range[0], week_range[1])]
+
+    st.markdown(f"필터 적용: 반 = {', '.join([f'{c}반' for c in class_sel])} / 주차 = {week_range[0]} ~ {week_range[1]}")
+    st.write(f"결과 항목: {len(df_filtered)}개")
+
+    if not df_filtered.empty:
+        # 키워드별 집계 (내림차순)
+        df_counts = df_filtered.groupby("keyword").size().reset_index(name="count")
+        df_counts = df_counts.sort_values("count", ascending=False).reset_index(drop=True)
+
+        # 파이 차트 (상위 몇개만)
+        top_n = st.slider("파이 차트에 표시할 상위 개수", 3, min(20, max(3, len(df_counts))), value=min(6, len(df_counts)))
+        df_pie = df_counts.head(top_n)
+
+        pie = (
+            alt.Chart(df_pie)
+            .mark_arc(innerRadius=40)
+            .encode(
+                theta=alt.Theta("count:Q"),
+                color=alt.Color("keyword:N", legend=alt.Legend(title="키워드")),
+                tooltip=["keyword", "count"]
+            )
+            .properties(height=300)
+        )
+        st.altair_chart(pie, use_container_width=True)
+
+        # 막대그래프: 왼쪽=빈도 높은 순서
+        order = df_counts["keyword"].tolist()
+        bar = (
+            alt.Chart(df_counts)
+            .mark_bar()
+            .encode(
+                x=alt.X("keyword:N", sort=order, title="키워드"),
+                y=alt.Y("count:Q", title="빈도"),
+                tooltip=["keyword", "count"]
+            )
+            .properties(height=300)
+        )
+        st.altair_chart(bar, use_container_width=True)
+
+        # 테이블: 상위 항목과 예시 제출(최신)
+        st.markdown("#### 키워드별 샘플 제출 (최신)")
+        for _, row in df_counts.head(20).iterrows():
+            kw = row["keyword"]
+            cnt = row["count"]
+            examples = df_filtered[df_filtered["keyword"] == kw].sort_values("id", ascending=False).head(3)
+            example_texts = []
+            for _, ex in examples.iterrows():
+                example_texts.append(f"{int(ex['grade']) if isinstance(ex['grade'], int) else ex['grade']} {int(ex['class_num']) if not pd.isna(ex['class_num']) else ''}반 — {ex['student_name'] or str(ex['student_no'])}")
+            st.write(f"{kw} — {cnt}회 — 예: {', '.join(example_texts)}")
+
+        # 원하면 전체 결과 테이블도 표시
+        if st.checkbox("필터된 원본 데이터 보기"):
+            st.dataframe(df_filtered.sort_values("ts", ascending=False))
+    else:
+        st.info("필터 조건에 맞는 항목이 없습니다.")
+# ...existing code...
+# -----------------------------
+# 샘플 탐색 섹션: movies 템플릿 변형
+# - genre chips -> '반' 멀티셀렉트(chips 스타일)
+# - year slider -> 주차(week) 슬라이더
+# -----------------------------
+st.markdown("---")
+st.subheader("제출 데이터 탐색 (샘플 템플릿)")
+
+# DB에서 전체 항목 불러오기
+all_items = get_keywords(limit=2000, category=None)  # 전체 카테고리
+
+# DataFrame으로 변환
+rows = []
+for r in all_items:
+    # r: (id, keyword, category, grade, class_num, student_no, student_name, ts)
+    try:
+        dt = datetime.fromisoformat(r[7])
+        week = dt.isocalendar().week
+    except Exception:
+        dt = None
+        week = None
+    rows.append({
+        "id": r[0],
+        "keyword": r[1],
+        "category": r[2],
+        "grade": r[3],
+        "class_num": r[4],
+        "student_no": r[5],
+        "student_name": r[6],
+        "ts": r[7],
+        "week": week
+    })
+df_all = pd.DataFrame(rows)
+
+if df_all.empty:
+    st.info("제출된 항목이 없습니다. 먼저 키워드를 제출해 주세요.")
+else:
+    # 반(chips 스타일) 멀티셀렉트
+    class_options = sorted(df_all["class_num"].dropna().unique().astype(int).tolist())
+    # 기본: 모두 선택
+    class_sel = st.multiselect("반 필터 (chips)", class_options, default=class_options, format_func=lambda x: f"{x}반")
+
+    # 주차 슬라이더 (범위)
+    min_week = int(df_all["week"].dropna().min()) if not df_all["week"].dropna().empty else 1
+    max_week = int(df_all["week"].dropna().max()) if not df_all["week"].dropna().empty else 52
+    week_range = st.slider("주차 범위", 1, 52, (min_week, max_week))
+
+    # 필터 적용
+    df_filtered = df_all.copy()
+    if class_sel:
+        df_filtered = df_filtered[df_filtered["class_num"].isin(class_sel)]
+    df_filtered = df_filtered[df_filtered["week"].between(week_range[0], week_range[1])]
+
+    st.markdown(f"필터 적용: 반 = {', '.join([f'{c}반' for c in class_sel])} / 주차 = {week_range[0]} ~ {week_range[1]}")
+    st.write(f"결과 항목: {len(df_filtered)}개")
+
+    if not df_filtered.empty:
+        # 키워드별 집계 (내림차순)
+        df_counts = df_filtered.groupby("keyword").size().reset_index(name="count")
+        df_counts = df_counts.sort_values("count", ascending=False).reset_index(drop=True)
+
+        # 파이 차트 (상위 몇개만)
+        top_n = st.slider("파이 차트에 표시할 상위 개수", 3, min(20, max(3, len(df_counts))), value=min(6, len(df_counts)))
+        df_pie = df_counts.head(top_n)
+
+        pie = (
+            alt.Chart(df_pie)
+            .mark_arc(innerRadius=40)
+            .encode(
+                theta=alt.Theta("count:Q"),
+                color=alt.Color("keyword:N", legend=alt.Legend(title="키워드")),
+                tooltip=["keyword", "count"]
+            )
+            .properties(height=300)
+        )
+        st.altair_chart(pie, use_container_width=True)
+
+        # 막대그래프: 왼쪽=빈도 높은 순서
+        order = df_counts["keyword"].tolist()
+        bar = (
+            alt.Chart(df_counts)
+            .mark_bar()
+            .encode(
+                x=alt.X("keyword:N", sort=order, title="키워드"),
+                y=alt.Y("count:Q", title="빈도"),
+                tooltip=["keyword", "count"]
+            )
+            .properties(height=300)
+        )
+        st.altair_chart(bar, use_container_width=True)
+
+        # 테이블: 상위 항목과 예시 제출(최신)
+        st.markdown("#### 키워드별 샘플 제출 (최신)")
+        for _, row in df_counts.head(20).iterrows():
+            kw = row["keyword"]
+            cnt = row["count"]
+            examples = df_filtered[df_filtered["keyword"] == kw].sort_values("id", ascending=False).head(3)
+            example_texts = []
+            for _, ex in examples.iterrows():
+                example_texts.append(f"{int(ex['grade']) if isinstance(ex['grade'], int) else ex['grade']} {int(ex['class_num']) if not pd.isna(ex['class_num']) else ''}반 — {ex['student_name'] or str(ex['student_no'])}")
+            st.write(f"{kw} — {cnt}회 — 예: {', '.join(example_texts)}")
+
+        # 원하면 전체 결과 테이블도 표시
+        if st.checkbox("필터된 원본 데이터 보기"):
+            st.dataframe(df_filtered.sort_values("ts", ascending=False))
+    else:
+        st.info("필터 조건에 맞는 항목이 없습니다.")
 # ...existing code...
