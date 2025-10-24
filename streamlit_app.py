@@ -8,6 +8,56 @@ from collections import Counter
 import pandas as pd
 import altair as alt
 
+# --- 한글 폰트 설정 (프로젝트 폴더의 fonts/NanumGothic 사용) ---
+FONT_DIR = Path(__file__).parent / "fonts"
+
+def _find_font_file():
+    if not FONT_DIR.exists():
+        return None
+    # 우선 NanumGothic 이름을 포함한 ttf 검색, 없으면 첫 ttf 사용
+    cand = list(FONT_DIR.glob("**/*NanumGothic*.ttf"))
+    if not cand:
+        cand = list(FONT_DIR.glob("**/*.ttf"))
+    return cand[0] if cand else None
+
+_FONT_FILE = _find_font_file()
+if _FONT_FILE:
+    FONT_PATH = str(_FONT_FILE.resolve())
+    # 페이지 전역에 폰트 적용 (CSS 삽입)
+    _css = f"""
+    <style>
+    @font-face {{
+        font-family: 'NanumGothic';
+        src: url('file://{FONT_PATH}') format('truetype');
+    }}
+    html, body, .stApp, .block-container, h1, h2, h3, h4, h5, p, label, div, span {{
+        font-family: 'NanumGothic', sans-serif !important;
+    }}
+    </style>
+    """
+    import streamlit as _st
+    _st.markdown(_css, unsafe_allow_html=True)
+
+    # Altair 테마로 한글 폰트 지정
+    def _nanum_theme():
+        return {
+            "config": {
+                "title": {"font": "NanumGothic"},
+                "axis": {"labelFont": "NanumGothic", "titleFont": "NanumGothic"},
+                "legend": {"labelFont": "NanumGothic", "titleFont": "NanumGothic"},
+                "header": {"labelFont": "NanumGothic"}
+            }
+        }
+    try:
+        alt.themes.register("nanum", _nanum_theme)
+        alt.themes.enable("nanum")
+    except Exception:
+        # Altair 버전/등록 문제 시 무시
+        pass
+else:
+    FONT_PATH = None
+# --- end font setup ---
+
 # 워드클라우드 라이브러리 시도 임포트 (matplotlib 없이도 표시 가능하도록 to_image 사용)
 try:
     from wordcloud import WordCloud
@@ -104,6 +154,9 @@ if "student_no_select" not in st.session_state:
     st.session_state["student_no_select"] = "1번"
 if "student_name" not in st.session_state:
     st.session_state["student_name"] = ""
+# 추가: 수업 주차 초기값 (1~17)
+if "week_select" not in st.session_state:
+    st.session_state["week_select"] = 1
 
 if "msg" not in st.session_state:
     st.session_state["msg"] = ""
@@ -136,7 +189,13 @@ st.markdown("---")
 st.write("카테고리를 먼저 선택한 후, 헷갈리는 개념을 키워드로 입력하세요.")
 
 # 1) 입력용 카테고리 선택 (키워드 입력 시에 사용할 카테고리)
-category = st.selectbox("입력할 카테고리 선택", ["Vocabulary", "Grammar", "Reading", "Else"], key="category_select")
+# 카테고리와 수업 주차를 한 줄에 배치
+col_cat, col_week = st.columns([2,1])
+with col_cat:
+    category = st.selectbox("입력할 카테고리 선택", ["Vocabulary", "Grammar", "Reading", "Else"], key="category_select")
+with col_week:
+    week = st.selectbox("수업 주차", list(range(1, 18)), index=st.session_state.get("week_select", 1)-1, format_func=lambda x: f"{x}주차", key="week_select")
+# ...existing code...
 
 # 2) 키워드 입력 (입력 파트)
 input_key = "keyword_input"
@@ -193,23 +252,60 @@ def get_category_counts():
     rows = cur.fetchall()
     return rows
 
+# ...existing code...
+# ...existing code...
 counts = get_category_counts()
 if counts:
     df_counts = pd.DataFrame(counts, columns=["category", "count"])
-    pie = (
-        alt.Chart(df_counts)
-        .mark_arc(innerRadius=50)
-        .encode(
-            theta=alt.Theta("count:Q", title="제출 수"),
-            color=alt.Color("category:N", legend=alt.Legend(title="카테고리")),
-            tooltip=["category", "count"]
-        )
-        .properties(width=350, height=350)
-    )
+    # 백분율 칼럼 추가 (툴팁에 사용)
+    df_counts["percent"] = (df_counts["count"] / df_counts["count"].sum() * 100).round(1)
+
+    # 통합 제목 (파이 + 바 한 번에)
     st.markdown("### 전체 카테고리별 제출 수")
-    st.altair_chart(pie, use_container_width=False)
+    col1, col2 = st.columns([1,1])
+
+    # 일관된 색상 스케일 사용
+    color_scale = alt.Scale(domain=df_counts["category"].tolist(), scheme="category10")
+
+    with col1:
+        pie = (
+            alt.Chart(df_counts)
+            .mark_arc(innerRadius=60)
+            .encode(
+                theta=alt.Theta("count:Q"),
+                color=alt.Color("category:N", scale=color_scale, legend=alt.Legend(title="카테고리")),
+                tooltip=[alt.Tooltip("category:N", title="카테고리"),
+                         alt.Tooltip("count:Q", title="건수"),
+                         alt.Tooltip("percent:Q", title="비율(%)")]
+            )
+            .properties(height=360)
+        )
+        st.altair_chart(pie, use_container_width=True)
+
+    with col2:
+        bar = (
+            alt.Chart(df_counts)
+            .mark_bar(cornerRadiusTopLeft=6, cornerRadiusTopRight=6)
+            .encode(
+                x=alt.X("category:N", sort="-y", title=None),
+                y=alt.Y("count:Q", title="제출 수"),
+                color=alt.Color("category:N", scale=color_scale, legend=None),
+                tooltip=[alt.Tooltip("category:N", title="카테고리"),
+                         alt.Tooltip("count:Q", title="건수")]
+            )
+            .properties(height=360)
+        )
+        # 막대 위에 숫자 레이블 추가
+        labels = alt.Chart(df_counts).mark_text(dy=-8, color="black").encode(
+            x=alt.X("category:N", sort="-y"),
+            y=alt.Y("count:Q"),
+            text=alt.Text("count:Q")
+        )
+        st.altair_chart(bar + labels, use_container_width=True)
 else:
     st.info("아직 제출된 항목이 없어 카테고리 통계를 표시할 수 없습니다.")
+# ...existing code...
+# ...existing code...
 
 # ...existing code...
 # 보기용(필터) 카테고리 선택 — 결과 파트 시작
@@ -254,18 +350,25 @@ if keywords:
     df = pd.DataFrame(freq.items(), columns=["keyword", "count"])
     df = df.sort_values("count", ascending=False).reset_index(drop=True)
 
+    # ...existing code...
     # 1) 워드클라우드 먼저
     st.markdown("#### 워드클라우드")
     if WORDCLOUD_AVAILABLE:
         freq_dict = dict(freq)
-        wc = WordCloud(width=800, height=400, background_color="white")
+        # 로컬 NanumGothic 폰트를 사용하도록 font_path 전달
+        wc = WordCloud(
+            width=800,
+            height=400,
+            background_color="white",
+            font_path=FONT_PATH if ('FONT_PATH' in globals() and FONT_PATH) else None,
+        )
         wc.generate_from_frequencies(freq_dict)
         img = wc.to_image()
         st.image(img, use_container_width=True)
 
         # 클릭 가능한 단어 버튼(워드클라우드 아래)
         st.markdown("**워드클라우드 단어(클릭하면 부연설명 표시)**")
-        word_options = df["keyword"].tolist()
+        word_options = df["keyword"].tolist() if not df.empty else []
         # 상위 30개만 버튼으로 표시
         max_buttons = min(30, len(word_options))
         cols = st.columns(6)
@@ -297,6 +400,7 @@ if keywords:
                 st.session_state["selected_word"] = ""
     else:
         st.info("워드클라우드를 보려면 'wordcloud'와 'pillow' 패키지를 설치하세요.\n터미널에서: pip3 install wordcloud pillow")
+# ...existing code...
     # 2) 빈도순 막대그래프 (왼쪽=최대 -> 오른쪽=최소)
     st.markdown("#### 빈도순 막대그래프")
     df_chart = df.copy()
@@ -387,6 +491,7 @@ else:
     class_sel = st.multiselect("반 필터 (chips)", class_options, default=class_options, format_func=lambda x: f"{x}반")
 # ...existing code...
 
+   # ...existing code...
     # 주차 슬라이더 (범위 1주차 ~ 17주차)
     min_week = 1
     max_week = 17
@@ -396,8 +501,20 @@ else:
     data_max = int(data_weeks.max()) if not data_weeks.empty else max_week
     default_start = max(min_week, data_min)
     default_end = min(max_week, data_max)
-    week_range = st.slider("주차 범위 (1~17주)", min_week, max_week, (default_start, default_end))
 
+    # 학생 입력한 주차(입력 파트의 week_select)를 반영하여 기본 범위가 그 주차를 반드시 포함하도록 조정
+    selected_week = st.session_state.get("week_select", None)
+    if isinstance(selected_week, int):
+        selected_week = max(min_week, min(max_week, selected_week))
+        default_start = min(default_start, selected_week)
+        default_end = max(default_end, selected_week)
+
+    # 만약 데이터가 전혀 없을 때 기본값을 선정
+    if default_start > default_end:
+        default_start, default_end = min_week, min_week
+
+    week_range = st.slider("주차 범위 (1~17주)", min_week, max_week, (default_start, default_end))
+# ...existing code...
     # 필터 적용
     df_filtered = df_all.copy()
     if class_sel:
