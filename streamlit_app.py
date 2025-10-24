@@ -21,6 +21,8 @@ def _find_font_file():
     return cand[0] if cand else None
 
 # ...existing code...
+# ...existing code...
+# ...existing code...
 _FONT_FILE = _find_font_file()
 if _FONT_FILE:
     FONT_PATH = str(_FONT_FILE.resolve())
@@ -33,11 +35,11 @@ if _FONT_FILE:
         font-weight: normal;
         font-style: normal;
     }}
-    /* 텍스트용 요소만 NanumGothic 적용 (span/div/전체 선택자 사용 금지) */
+    /* 텍스트용 요소만 NanumGothic 적용 (아이콘 폰트는 덮어쓰지 않음) */
     html, body, .stApp, .block-container, h1, h2, h3, h4, h5, p, label, input, textarea {{
         font-family: 'NanumGothic', sans-serif !important;
     }}
-    /* Material Icons(리게이처 방식)를 사용하는 요소는 원래 폰트를 유지하도록 예외 처리 */
+    /* Material Icons 예외 처리 */
     .material-icons, .material-icons-outlined, .material-icons-round, i.material-icons {{
         font-family: 'Material Icons' !important;
         speak: none;
@@ -53,11 +55,43 @@ if _FONT_FILE:
         -webkit-font-feature-settings: 'liga';
         -webkit-font-smoothing: antialiased;
     }}
+
+    /* 워드클라우드 상위 단어 버튼 통일 스타일 */
+    /* 컬럼 내부 버튼을 컬럼 폭에 맞춰 동일 너비로 표시 */
+    div[data-testid="column"] .stButton > button {{
+        width: 100% !important;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        padding: 6px 10px;
+        min-height: 40px;
+        box-sizing: border-box;
+        font-size: 14px;
+        border-radius: 6px;
+    }}
+    /* 컬럼 부모 요소가 축소될 때도 버튼이 줄바꿈 되지 않게 강제 */
+    div[data-testid="column"] {{
+        flex: 1 1 0%;
+        min-width: 0;
+    }}
+    /* 버튼 텍스트 중앙 정렬 및 말줄임 처리 */
+    div[data-testid="column"] .stButton > button > span {{
+        display: inline-block;
+        max-width: 100%;
+        text-align: center;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }}
     </style>
     """
     import streamlit as _st
     _st.markdown(_css, unsafe_allow_html=True)
 # ...existing code...
+    
 
     # Altair 테마로 한글 폰트 지정
     def _nanum_theme():
@@ -216,7 +250,7 @@ st.markdown("---")
 
 
 # 안내 문구(학생 정보 아래, 질문 입력과 분리)
-st.write("카테고리를 먼저 선택한 후, 헷갈리는 개념을 키워드로 입력하세요.")
+st.write("💬 카테고리를 먼저 선택한 후, 헷갈리는 개념을 키워드로 입력하세요.")
 
 # 1) 입력용 카테고리 선택 (키워드 입력 시에 사용할 카테고리)
 # 카테고리와 수업 주차를 한 줄에 배치
@@ -424,7 +458,10 @@ if keywords:
         st.markdown("---")
 
         # 워드클라우드 안내 문구 (기존 안내문과 동일한 스타일)
-        st.markdown("<div style='font-size:14px; color:#333; margin-top:8px; margin-bottom:8px;'>💬 키워드를 클릭하면 질문을 확인할 수 있습니다.</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:1rem; color:#333; margin-top:8px; margin-bottom:8px;'>"
+    "💬 키워드를 클릭하면 질문을 확인할 수 있습니다."
+    "</div>", unsafe_allow_html=True)
+        
         # 버튼과의 간격 확보용 추가 여백
         st.markdown("<div style='height:18px;'></div>", unsafe_allow_html=True)
 
