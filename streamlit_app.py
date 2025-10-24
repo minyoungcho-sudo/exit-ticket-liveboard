@@ -417,16 +417,20 @@ if keywords:
             font_path=FONT_PATH if ('FONT_PATH' in globals() and FONT_PATH) else None,
         )
         wc.generate_from_frequencies(freq_dict)
-        # ...existing code...
-        # ...existing code...
+        
         img = wc.to_image()
         st.image(img, use_container_width=True)
-        
+
         st.markdown("---")
 
+        # 워드클라우드 안내 문구 (기존 안내문과 동일한 스타일)
+        st.markdown("<div style='font-size:14px; color:#333; margin-top:8px; margin-bottom:8px;'>💬 키워드를 클릭하면 질문을 확인할 수 있습니다.</div>", unsafe_allow_html=True)
+        # 버튼과의 간격 확보용 추가 여백
+        st.markdown("<div style='height:18px;'></div>", unsafe_allow_html=True)
 
         # 클릭 가능한 상위 5개 단어 버튼(워드클라우드 아래, 빈도 순) — 고정 5칸 배치로 간격 통일
         top_words = df.head(5)["keyword"].tolist()
+# ...existing code...
         if "selected_word" not in st.session_state:
             st.session_state["selected_word"] = ""
 
@@ -464,7 +468,7 @@ if keywords:
     st.markdown("---")
 
     # 2) 빈도순 막대그래프 (왼쪽=최대 -> 오른쪽=최소) - 색상/디자인 통일감 있게 개선
-    st.markdown("#### ❓ 질문 키워드 TOP 5")
+    st.markdown("#### 🚩 질문 키워드 RANKING")
     df_chart = df.copy()
     # df는 이미 내림차순 정렬되어 있어 order 그대로 사용하면 왼쪽이 최대
     order = df_chart["keyword"].tolist()
