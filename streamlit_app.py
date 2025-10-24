@@ -133,7 +133,8 @@ DB_PATH = Path(__file__).parent / "keywords.db"
 def init_db():
     conn = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL;")
-    # note 컬럼 추가 (부연 설명 저장)
+
+    # 테이블 생성 (week는 없어도 됨 — 아래에서 조건부로 추가)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS keywords (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -148,10 +149,12 @@ def init_db():
         )
     """)
     conn.commit()
-    # 기존 DB에 새 컬럼이 없을 경우 안전하게 추가
+
+    # ✅ 여기부터 추가: 컬럼 존재 여부 점검 후 없으면 추가
     cur = conn.cursor()
     cur.execute("PRAGMA table_info(keywords)")
     cols = [r[1] for r in cur.fetchall()]
+
     if "grade" not in cols:
         conn.execute("ALTER TABLE keywords ADD COLUMN grade TEXT DEFAULT '2학년'")
     if "class_num" not in cols:
@@ -162,18 +165,26 @@ def init_db():
         conn.execute("ALTER TABLE keywords ADD COLUMN student_name TEXT DEFAULT ''")
     if "note" not in cols:
         conn.execute("ALTER TABLE keywords ADD COLUMN note TEXT DEFAULT ''")
+    # 🔽 바로 여기! week 컬럼 추가
+    if "week" not in cols:
+        conn.execute("ALTER TABLE keywords ADD COLUMN week INTEGER")
+    # ▲ week 컬럼은 NULL 허용: 과거 데이터엔 비워두고, 이후 저장 시 채우면 됨
+
     conn.commit()
     return conn
 
+
 conn = init_db()
 
-def add_keyword(kw: str, category: str, grade: str, class_num: int, student_no: int, student_name: str, note: str):
-    ts = datetime.utcnow().isoformat()
+def add_keyword(kw: str, category: str, grade: str, class_num: int, student_no: int, student_name: str, note: str, week: int | None):
+    # 한국 시간으로 저장 권장
+    ts = datetime.now().astimezone().isoformat()
     with conn:
         conn.execute(
-            "INSERT INTO keywords (keyword, category, grade, class_num, student_no, student_name, note, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (kw, category, grade, class_num, student_no, student_name, note, ts)
+            "INSERT INTO keywords (keyword, category, grade, class_num, student_no, student_name, note, ts, week) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (kw, category, grade, class_num, student_no, student_name, note, ts, week)
         )
+
 
 def get_keywords(limit: int = 500, category: str | None = None):
     cur = conn.cursor()
@@ -304,11 +315,15 @@ def submit_callback():
     student_name_val = st.session_state.get("student_name", "").strip()
 
     if kw:
-        add_keyword(kw, cat, grade_val, class_num, student_no, student_name_val, note_text)
+        # week_select 값 가져오기
+        week_val = st.session_state.get("week_select", None)
+        
+        # week 포함해 저장
+        add_keyword(kw, cat, grade_val, class_num, student_no, student_name_val, note_text, week_val)
+
         # 입력창 비우기
         st.session_state[input_key] = ""
         st.session_state["note_input"] = ""
-        # Reading이면 선택값은 유지하거나 비울 수 있음 — 여기선 유지
         st.session_state["msg"] = f"제출됨: [{cat}] {kw}"
         st.session_state["msg_type"] = "success"
     else:
