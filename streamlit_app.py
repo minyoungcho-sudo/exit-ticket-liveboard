@@ -142,7 +142,7 @@ category = st.selectbox("입력할 카테고리 선택", ["Vocabulary", "Grammar
 input_key = "keyword_input"
 keyword = st.text_input("질문 키워드 입력", key=input_key)
 # 부연 설명 입력란(문장)
-note = st.text_area("부연 설명 (선택, 문장으로 입력)", key="note_input", height=80, placeholder="예: 특정 문장에서 쓰임이 헷갈려요. 문장 전체를 적어주세요.")
+note = st.text_area("부연 설명 (문장으로 입력)", key="note_input", height=80, placeholder="예: 특정 문장에서 쓰임이 헷갈려요. 문장 전체를 적어주세요.")
 
 def submit_callback():
     kw = st.session_state.get(input_key, "").strip()
@@ -211,23 +211,33 @@ if counts:
 else:
     st.info("아직 제출된 항목이 없어 카테고리 통계를 표시할 수 없습니다.")
 
+# ...existing code...
 # 보기용(필터) 카테고리 선택 — 결과 파트 시작
 view_category = st.selectbox("보기용 카테고리 선택", ["All", "Vocabulary", "Grammar", "Reading", "Else"], index=0, key="view_category")
 
-st.subheader(f"제출된 키워드 목록")
-
-# 필터를 적용해서 항목 불러오기
-items = get_keywords(category=view_category)
-
-if items:
-    for row in items:
-        # row 구조: (id, keyword, category, grade, class_num, student_no, student_name, ts)
-        kw = row[1]
-        cat = row[2]
-        # 카테고리와 키워드만 표시
-        st.write(f"[{cat}] {kw}")
-else:
-    st.info("해당 카테고리에 제출된 항목이 없습니다.")
+# 제출된 키워드 목록을 접힘(버튼) 방식으로 보여주기 — Inventory tracker 스타일 표
+with st.expander("제출된 키워드 목록 보기", expanded=False):
+    items = get_keywords(category=view_category)
+    if items:
+        table_rows = []
+        for r in items:
+            # r 구조: (id, keyword, category, grade, class_num, student_no, student_name, note, ts)
+            _id, kw, cat, grade_db, class_db, no_db, name_db, note_db, ts = r
+            submitter = f"{grade_db} {class_db}반 {no_db}번 {name_db}" if name_db else f"{grade_db} {class_db}반 {no_db}번"
+            table_rows.append({
+                "제출자": submitter,
+                "카테고리": cat,
+                "키워드": kw,
+                "부연설명": note_db,
+                "제출시간": ts
+            })
+        df_table = pd.DataFrame(table_rows)
+        # Inventory tracker 느낌으로 정렬된 컬럼 표시
+        cols_order = ["제출자", "카테고리", "키워드", "부연설명", "제출시간"]
+        st.dataframe(df_table[cols_order], use_container_width=True)
+    else:
+        st.info("해당 카테고리에 제출된 항목이 없습니다.")
+# ...existing code...
 
 # -----------------------------
 # 빈도 집계 및 시각화 추가 (워드클라우드 먼저, 그 다음 빈도)
@@ -422,104 +432,48 @@ else:
     else:
         st.info("필터 조건에 맞는 항목이 없습니다.")
 # ...existing code...
-# ...existing code...
 st.markdown("---")
-st.subheader("제출 데이터 탐색 (샘플 템플릿)")
+with st.container():
+    st.subheader("보드 초기화")
+    confirm = st.checkbox("정말 초기화할래요? (그래프/표/입력 모두 비워짐)")
 
-# DB에서 전체 항목 불러오기
-all_items = get_keywords(limit=2000, category=None)  # 전체 카테고리
+    if st.button("🧹 완전 초기화", use_container_width=True, disabled=not confirm):
+        try:
+            # 1) DB 비우기 (테이블 전체 삭제)
+            #   - 전체 초기화: 아래 DELETE 그대로 사용
+            #   - 특정 학년/반만 초기화하고 싶으면 WHERE 절 추가 예시:
+            #     conn.execute("DELETE FROM keywords WHERE grade=? AND class_num=?", (선택학년, 선택반))
+            with conn:
+                conn.execute("DELETE FROM keywords;")
 
-# DataFrame으로 변환 (dt 컬럼으로 일시 파싱)
-rows = []
-for r in all_items:
-    # r: (id, keyword, category, grade, class_num, student_no, student_name, ts)
-    rows.append({
-        "id": r[0],
-        "keyword": r[1],
-        "category": r[2],
-        "grade": r[3],
-        "class_num": r[4],
-        "student_no": r[5],
-        "student_name": r[6],
-        "ts": r[7],
-    })
-df_all = pd.DataFrame(rows)
+            # (선택) WAL 체크포인트/용량 정리 — WAL 모드라면 아래가 가볍고 안전합니다
+            try:
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+            except Exception:
+                pass
+            # VACUUM을 쓰고 싶다면 트랜잭션 밖에서 호출해야 합니다.
+            # try:
+            #     conn.execute("VACUUM;")
+            # except Exception:
+            #     pass
 
-if df_all.empty:
-    st.info("제출된 항목이 없습니다. 먼저 키워드를 제출해 주세요.")
-else:
-    # ts -> datetime 변환
-    df_all["dt"] = pd.to_datetime(df_all["ts"], errors="coerce")
+            # 2) 세션/캐시 비우기
+            keys_to_reset = [
+                "keyword_input","note_input","selected_word","msg","msg_type",
+                "view_category","category_select","grade_select","class_select",
+                "student_no_select","student_name"
+            ]
+            for k in keys_to_reset:
+                st.session_state.pop(k, None)
 
-    # 학기(또는 기준) 시작 주를 데이터의 가장 빠른 제출일의 주 월요일로 잡아 주차(1~17) 계산
-    from datetime import timedelta
-    min_dt = df_all["dt"].min()
-    if pd.isna(min_dt):
-        term_start = None
-    else:
-        # 해당 날짜의 주 월요일을 시작(주차 1)으로 사용
-        term_start = (min_dt - timedelta(days=min_dt.weekday())).date()
+            try:
+                st.cache_data.clear()
+                st.cache_resource.clear()
+            except Exception:
+                pass
 
-    def compute_academic_week(dt):
-        if pd.isna(dt) or term_start is None:
-            return None
-        days = (dt.date() - term_start).days
-        week = (days // 7) + 1
-        # 범위를 1~17로 고정
-        if week < 1:
-            return 1
-        if week > 17:
-            return 17
-        return int(week)
+            st.success("✅ 모든 데이터가 초기화되었습니다. (DB+세션)")
+            st.rerun()  # 즉시 빈 상태로 다시 렌더링
 
-    df_all["week"] = df_all["dt"].apply(compute_academic_week)
-
-    # 반(chips 스타일) 멀티셀렉트
-    class_options = sorted(df_all["class_num"].dropna().unique().astype(int).tolist())
-    class_sel = st.multiselect("반 필터 (chips)", class_options, default=class_options, format_func=lambda x: f"{x}반")
-
-    # 주차 슬라이더 (범위 1주차 ~ 17주차)
-    min_week = 1
-    max_week = 17
-    # 데이터 기반 기본값
-    data_weeks = df_all["week"].dropna().astype(int)
-    data_min = int(data_weeks.min()) if not data_weeks.empty else min_week
-    data_max = int(data_weeks.max()) if not data_weeks.empty else max_week
-    default_start = max(min_week, data_min)
-    default_end = min(max_week, data_max)
-    week_range = st.slider("주차 범위 (1~17주)", min_week, max_week, (default_start, default_end))
-
-    # 필터 적용
-    df_filtered = df_all.copy()
-    if class_sel:
-        df_filtered = df_filtered[df_filtered["class_num"].isin(class_sel)]
-    df_filtered = df_filtered[df_filtered["week"].between(week_range[0], week_range[1])]
-
-    st.markdown(f"필터 적용: 반 = {', '.join([f'{c}반' for c in class_sel])} / 주차 = {week_range[0]} ~ {week_range[1]}")
-    st.write(f"결과 항목: {len(df_filtered)}개")
-
-    if not df_filtered.empty:
-        # 카테고리별/주차별 최다 빈도 키워드 표 생성
-        categories = ["Vocabulary", "Grammar", "Reading", "Else"]
-        weeks = list(range(week_range[0], week_range[1] + 1))
-
-        top_map = {}
-        for w in weeks:
-            row_vals = {}
-            for c in categories:
-                sub = df_filtered[(df_filtered["week"] == w) & (df_filtered["category"] == c)]
-                if not sub.empty:
-                    kw_counts = sub.groupby("keyword").size().reset_index(name="count").sort_values("count", ascending=False)
-                    top = kw_counts.iloc[0]
-                    row_vals[c] = f"{top['keyword']} ({int(top['count'])})"
-                else:
-                    row_vals[c] = ""
-            top_map[w] = row_vals
-
-        table_df = pd.DataFrame.from_dict(top_map, orient="index")[categories]
-        table_df.index.name = "주차"
-        st.markdown("#### 주차 × 카테고리 별 최다 빈도 키워드")
-        st.dataframe(table_df)
-    else:
-        st.info("필터 조건에 맞는 항목이 없습니다.")
-# ...existing code...
+        except Exception as e:
+            st.error(f"초기화 중 오류: {e}")
