@@ -454,68 +454,70 @@ if keywords:
     df = df.sort_values("count", ascending=False).reset_index(drop=True)
 
     # ...existing code...
-    # 1) 워드클라우드 먼저
+
+    
+    # 1) 워드클라우드 표시 (Top 키워드 제거, 기본형)
     st.markdown("#### ")
     if WORDCLOUD_AVAILABLE:
         freq_dict = dict(freq)
-        # 로컬 NanumGothic 폰트를 사용하도록 font_path 전달
+
+        # 기본 직사각형 워드클라우드
         wc = WordCloud(
-            width=800,
-            height=400,
+            width=700,
+            height=420,
             background_color="white",
+            colormap="plasma",
+            prefer_horizontal=0.9,
+            contour_width=0,
             font_path=FONT_PATH if ('FONT_PATH' in globals() and FONT_PATH) else None,
-        )
-        wc.generate_from_frequencies(freq_dict)
-        
+            random_state=42
+        ).generate_from_frequencies(freq_dict)
+
         img = wc.to_image()
+
+        # 제목 및 워드클라우드 표시
         st.image(img, use_container_width=True)
 
-        st.markdown("---")
+        st.markdown(
+        """
+        <div style='font-size:0.95rem; color:#444; margin-top:8px;'>
+            💬 <b>키워드 버튼</b>을 클릭하면 해당 키워드의 부연 설명을 볼 수 있어요.
+        </div>
+        <div style='height:20px;'></div>  <!-- 👈 여백 추가 -->
+        """,
+        unsafe_allow_html=True
+    )
 
-        # 워드클라우드 안내 문구 (기존 안내문과 동일한 스타일)
-        st.markdown("<div style='font-size:1rem; color:#333; margin-top:8px; margin-bottom:8px;'>"
-    "💬 키워드를 클릭하면 질문을 확인할 수 있습니다."
-    "</div>", unsafe_allow_html=True)
-        
-        # 버튼과의 간격 확보용 추가 여백
-        st.markdown("<div style='height:18px;'></div>", unsafe_allow_html=True)
-
-        # 클릭 가능한 상위 5개 단어 버튼(워드클라우드 아래, 빈도 순) — 고정 5칸 배치로 간격 통일
-        top_words = df.head(5)["keyword"].tolist()
-# ...existing code...
+        # 상위 5개 키워드 버튼
+        top_buttons = df.head(5)["keyword"].tolist()
         if "selected_word" not in st.session_state:
             st.session_state["selected_word"] = ""
-
-        cols = st.columns(5)
+        btn_cols = st.columns(5)
         for i in range(5):
-            if i < len(top_words):
-                w = top_words[i]
-                if cols[i].button(w):
+            if i < len(top_buttons):
+                w = top_buttons[i]
+                if btn_cols[i].button(w, key=f"kwbtn_{w}"):
                     st.session_state["selected_word"] = w
             else:
-                # 빈 칸 유지하여 레이아웃 균일화
-                cols[i].write("")
+                btn_cols[i].write("")
 
-        # 선택 단어가 있으면 부연설명만 표로 예쁘게 표시 (반/번호 제거), 인덱스는 1부터 시작
+        # 선택 단어의 부연 설명 표시
         if st.session_state.get("selected_word"):
             selected_word = st.session_state["selected_word"]
             view_cat = st.session_state.get("view_category", None) if "view_category" in st.session_state else None
             explanations = get_explanations_by_keyword(selected_word, category=view_cat)
-            # explanations: (student_name, class_num, student_no, note, ts)
+            st.markdown(f"##### 🔎 '{selected_word}' 관련 부연설명")
             if explanations:
                 notes = [ex[3] if ex[3] else "(부연 설명 없음)" for ex in explanations]
                 df_notes = pd.DataFrame({"부연설명": notes})
-                df_notes.index = range(1, len(df_notes) + 1)  # 번호 1부터 시작
+                df_notes.index = range(1, len(df_notes) + 1)
                 df_notes.index.name = "No"
-                # 컨테이너 폭을 사용하여 칼럼 폭 자동 정렬 (통일감)
                 st.dataframe(df_notes, use_container_width=True)
             else:
                 st.info("해당 단어에 대한 부연 설명이 없습니다.")
-            
-# ...existing code...
     else:
         st.info("워드클라우드를 보려면 'wordcloud'와 'pillow' 패키지를 설치하세요.\n터미널에서: pip3 install wordcloud pillow")
-# ...existing code...
+
     
     st.markdown("---")
 
