@@ -120,11 +120,11 @@ try:
 except Exception:
     WORDCLOUD_AVAILABLE = False
 
-st.set_page_config(page_title="Exit Ticket Live Board", layout="centered")
+st.set_page_config(page_title="민영쌤의 질문방", layout="centered")
 
 # ...existing code...
 # 중앙 정렬된 제목으로 변경
-st.markdown("<h1 style='text-align:center; margin-bottom:0.25rem;'>💡 Exit Ticket Live Board 💡</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align:center; margin-bottom:0.25rem;'>💡 민영쌤의 질문방 💡</h1>", unsafe_allow_html=True)
 # ...existing code...
 
 # DB 경로
