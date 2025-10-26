@@ -120,11 +120,15 @@ try:
 except Exception:
     WORDCLOUD_AVAILABLE = False
 
-st.set_page_config(page_title="민영쌤의 질문방", layout="centered")
+# ...existing code...
+st.set_page_config(page_title="민영쌤 질문방", layout="centered")
+
 
 # ...existing code...
 # 중앙 정렬된 제목으로 변경
-st.markdown("<h1 style='text-align:center; margin-bottom:0.25rem;'>💡 민영쌤의 질문방 💡</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align:center; margin-bottom:0.25rem;'>💡 민영쌤 질문방 💡</h1>", unsafe_allow_html=True)
+# 추가: 제목 아래 안내 문구
+st.markdown("<p style='text-align:center; color:#555; margin-top:4px; margin-bottom:8px;'>질문자의 이름은 공개되지 않습니다. 마음 편히 질문하세요 😊</p>", unsafe_allow_html=True)
 # ...existing code...
 
 # DB 경로
@@ -356,4 +360,4 @@ if st.button(
     "📊 실시간 분석 보러가기", 
     use_container_width=True, # 👈 가로폭을 페이지 전체 폭만큼 확장
 ):
-    st.switch_page("pages/data visualization.py")
+    st.switch_page("pages/Data visualization.py")

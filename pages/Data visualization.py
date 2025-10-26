@@ -180,11 +180,12 @@ if counts:
     df_counts["percent"] = (df_counts["count"] / df_counts["count"].sum() * 100).round(1)
 
     # 통합 제목 (파이 + 바 한 번에)
-    st.markdown("### 📊 카테고리별 질문 현황")
+    st.markdown("### ▪️ 카테고리별 질문 현황")
+    # 추가: 제목 아래 여백
+    st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
     col1, col2 = st.columns([1,1])
-
     # 일관된 색상 스케일 사용
-    color_scale = alt.Scale(domain=df_counts["category"].tolist(), scheme="category10")
+    color_scale = alt.Scale(domain=df_counts["category"].tolist(), scheme="accent")
 
     with col1:
         pie = (
@@ -260,7 +261,7 @@ with st.expander("제출된 키워드 목록 보기", expanded=False):
 # 빈도 집계 및 시각화 추가 (워드클라우드 먼저, 그 다음 빈도)
 # -----------------------------
 st.markdown("---")
-st.subheader(f"🔍 자주 언급한 질문 키워드")
+st.subheader(f"▪️ 자주 언급한 질문 키워드")
 
 # 키워드 문자열만 추출 (필터 적용된 items 사용)
 keywords = [kw for (_id, kw, _cat, _grade, _class, _no, _name, _note, _ts) in items]
@@ -357,11 +358,14 @@ if keywords:
     st.markdown("---")
 
     # 2) 빈도순 막대그래프 
-    st.markdown("#### 🚩 질문 키워드 RANKING")
+    st.markdown("#### ▪️ 질문 키워드 RANKING")
+# 추가: 제목 아래 여백
+    st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
+
     df_chart = df.copy()
     order = df_chart["keyword"].tolist()
 
-    color_scheme = "category20" if len(order) <= 20 else "category20"
+    color_scheme = "accent" if len(order) <= 20 else "accent"
     kw_color_scale = alt.Scale(domain=order, scheme=color_scheme)
 
     bar = (
@@ -393,42 +397,3 @@ else:
     st.info("집계할 키워드가 없습니다. 먼저 키워드를 제출해 주세요.")
 
 # -----------------------------
-# 보드 초기화 섹션 (이 페이지에 남겨둠)
-# -----------------------------
-st.markdown("---")
-with st.container():
-    st.subheader("보드 초기화")
-    confirm = st.checkbox("정말 초기화할래요? (그래프/표/입력 모두 비워짐)")
-
-    if st.button("🧹 완전 초기화", use_container_width=True, disabled=not confirm):
-        try:
-            # DB 비우기 (테이블 전체 삭제)
-            with conn:
-                conn.execute("DELETE FROM keywords;")
-
-            # (선택) WAL 체크포인트/용량 정리
-            try:
-                conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
-            except Exception:
-                pass
-
-            # 세션/캐시 비우기 (첫 페이지의 입력창도 같이 초기화)
-            keys_to_reset = [
-                "keyword_input","note_input","selected_word","msg","msg_type",
-                "view_category","category_select","grade_select","class_select",
-                "student_no_select","student_name"
-            ]
-            for k in keys_to_reset:
-                st.session_state.pop(k, None)
-
-            try:
-                st.cache_data.clear()
-                st.cache_resource.clear()
-            except Exception:
-                pass
-
-            st.success("✅ 모든 데이터가 초기화되었습니다. (DB+세션)")
-            st.rerun()  # 즉시 빈 상태로 다시 렌더링
-
-        except Exception as e:
-            st.error(f"초기화 중 오류: {e}")

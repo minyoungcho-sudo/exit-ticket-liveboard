@@ -21,7 +21,7 @@ except ImportError:
 
 # Streamlit 설정 및 DB 경로 설정
 # 레이아웃을 wide로 변경하여 퀴즈 화면을 넓게 사용할 것을 권장합니다.
-st.set_page_config(page_title="랜덤 퀴즈 생성", layout="wide") 
+st.set_page_config(page_title="랜덤 퀴즈 생성", layout="centered") 
 
 # DB 경로 설정 (pages/random_quiz.py 기준)
 DB_PATH = Path(__file__).parent.parent / "keywords.db"
@@ -124,41 +124,88 @@ st.markdown("---")
 # ------------------------------------
 # 퀴즈 설정 및 생성
 # ------------------------------------
-unique_keywords = get_unique_keywords()
+# ...existing code...
+# 퀴즈 설정
+unique_keywords_all = get_unique_keywords()
+
+# DB에서 존재하는 카테고리 목록을 가져오는 함수 (간단 구현)
+def get_all_categories():
+    cur = conn.cursor()
+    cur.execute("SELECT DISTINCT category FROM keywords")
+    rows = cur.fetchall()
+    cats = [r[0] for r in rows if r[0] is not None]
+    return sorted(cats)
+
+all_categories = get_all_categories()
+
+# 문항 카테고리 체크박스 (안내문 삭제되어 바로 아래에 표시)
+if not all_categories:
+    selected_categories = []
+else:
+    # 🌟 이 부분을 수정했습니다. st.markdown 대신 st.text를 사용하여 폰트 스타일 통일
+    st.text("문항 카테고리 (중복 선택 가능)") 
+    # 또는 st.subheader("문항 카테고리 (중복 선택 가능)")
+    # 또는 st.caption("**문항 카테고리 (중복 선택 가능)**")
+    
+    cols = st.columns(3)
+    selected_categories = []
+    for i, cat in enumerate(all_categories):
+        col = cols[i % 3]
+        chk = col.checkbox(cat, value=True, key=f"cat_chk_{i}")
+        if chk:
+            selected_categories.append(cat)
+
+# 체크된 카테고리로 키워드 필터링 (체크가 없으면 전체 사용)
+if selected_categories:
+    cur = conn.cursor()
+    placeholders = ",".join("?" for _ in selected_categories)
+    cur.execute(f"SELECT DISTINCT keyword FROM keywords WHERE category IN ({placeholders})", tuple(selected_categories))
+    kws = [r[0] for r in cur.fetchall()]
+    unique_keywords = [k for k in kws if k]  # None 필터링
+else:
+    unique_keywords = unique_keywords_all
+
+# 키워드 목록 문자열
 keyword_list_str = ", ".join(unique_keywords)
 
-if not unique_keywords:
-    st.info("아직 제출된 키워드가 없습니다. 퀴즈를 생성할 수 없습니다.")
-else:
-    st.info(f"현재 총 {len(unique_keywords)}개의 질문 키워드가 있습니다. 이를 기반으로 퀴즈를 생성합니다.")
-    
-    # 퀴즈 설정
-    col_num, col_btn = st.columns([3, 1])
-    with col_num:
-        num_questions = st.slider("생성할 퀴즈 문항 수", min_value=1, max_value=10, value=3, key="num_q")
-    
-    # 퀴즈 생성 버튼 (키워드 목록이 변경되면 캐시를 무효화)
-    if col_btn.button("✨ 새 퀴즈 생성 ✨", use_container_width=True, type="primary"):
+# --- 추가: 문항 카테고리 선택과 문항 수 선택 사이에 여백 추가 ---
+st.markdown("<div style='height:18px;'></div>", unsafe_allow_html=True)
+
+
+# 퀴즈 설정: 문항 수 선택 (드롭다운)
+num_questions = st.selectbox("생성할 퀴즈 문항 수", options=[1, 2, 3, 4, 5], index=2, key="num_q")
+
+# '새 퀴즈 생성' 버튼을 문항 수 선택란 아래로 이동
+if st.button("✨ 새 퀴즈 생성 ✨", use_container_width=True, type="primary"):
+    if not unique_keywords:
+        st.info("아직 제출된 키워드가 없어 퀴즈를 생성할 수 없습니다.")
+    else:
         # 기존 세션 상태 초기화
         st.session_state["quiz_data"] = None
         st.session_state["answers"] = {}
         st.session_state["submitted"] = False
-        
+
         # 새 퀴즈 생성 및 저장 (캐시를 사용)
         quiz_json = generate_quiz_with_ai(keyword_list_str, num_questions)
         st.session_state["quiz_data"] = quiz_json
-        
+
         # 퀴즈 생성 후 바로 표시되도록 Rerun
         st.rerun()
+# ...existing code...
 
 # ------------------------------------
 # 퀴즈 풀기 및 채점
 # ------------------------------------
 
+# ...existing code...
 if st.session_state["quiz_data"]:
     quiz_data = st.session_state["quiz_data"]
-    st.subheader(f"📝 {quiz_data['quiz_title']}")
+    # 상단 가로줄 추가
     st.markdown("---")
+    st.subheader(f"📝 {quiz_data['quiz_title']}")
+    # 아래 가로줄(기존 st.markdown("---")) 제거
+    # ...existing code...
+# ...existing code...
 
     questions = quiz_data['questions']
     
@@ -244,9 +291,11 @@ if st.session_state["quiz_data"]:
 # ------------------------------------
 # 메인 페이지 링크 버튼
 # ------------------------------------
+# ...existing code...
+# ...existing code...
 st.markdown("---")
-col_empty, col_home = st.columns([3, 1])
 
-with col_home:
-    if st.button("🏠 메인 페이지로 돌아가기", use_container_width=True):
-        st.switch_page("main_page.py")
+
+if st.button("🏠 메인 페이지로 돌아가기", use_container_width=True):
+    st.switch_page("Home.py")
+# ...existing code...
