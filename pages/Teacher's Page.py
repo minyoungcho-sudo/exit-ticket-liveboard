@@ -7,6 +7,34 @@ import altair as alt
 
 st.set_page_config(page_title="제출 데이터 탐색", layout="centered")
 
+# 🔒-------------------- 비밀번호 보호 (페이지 전용) --------------------
+PAGE_LOCK_KEY = "auth_explorer_page"  # 이 페이지 전용 세션 키
+DEFAULT_PASSWORD = "1234"       # secrets가 없을 때 기본 비밀번호
+PASSWORD = st.secrets.get("page_password", DEFAULT_PASSWORD)
+
+def require_password():
+    """비밀번호가 맞을 때만 아래 콘텐츠가 렌더되도록 막아줍니다."""
+    if PAGE_LOCK_KEY not in st.session_state:
+        st.session_state[PAGE_LOCK_KEY] = False
+
+    if not st.session_state[PAGE_LOCK_KEY]:
+        st.title("🔐 관리자 전용 페이지")
+        st.write("이 페이지를 보려면 비밀번호가 필요합니다.")
+        pw = st.text_input("비밀번호", type="password")
+        col1, col2 = st.columns([1,3])
+        with col1:
+            ok = st.button("접속")
+        if (ok or pw) and pw == PASSWORD:
+            st.session_state[PAGE_LOCK_KEY] = True
+            st.success("접속 성공! 페이지를 불러오는 중…")
+            st.rerun()
+        elif (ok or pw) and pw:
+            st.error("비밀번호가 올바르지 않습니다.")
+        st.stop()  # 🔑 비밀번호가 맞지 않으면 이후 코드 실행을 중단
+
+require_password()
+# 🔒------------------ /비밀번호 보호 (여기 아래는 보호됨) ------------------
+
 # DB 경로 (프로젝트 루트의 keywords.db 사용)
 DB_PATH = Path(__file__).parents[1] / "keywords.db"
 
@@ -66,10 +94,10 @@ def compute_week_from_dates(df):
     df["week"] = df["dt"].apply(_wk)
     return df
 
-# ...existing code...
+# --- 페이지 본문 (비밀번호 통과 시에만 렌더) ---
 st.markdown("<h1 style='text-align:center; margin:0.25rem 0;'>제출 데이터 탐색</h1>", unsafe_allow_html=True)
 st.markdown("---")
-# ...existing code...
+
 # 메인 페이지의 입력값을 세션에서 가져와 기본 필터로 반영
 ss = st.session_state
 main_class_select = ss.get("class_select", None)       # 예: "1반"
@@ -136,9 +164,7 @@ category_options = ["All", "Vocabulary", "Grammar", "Reading", "Else"]
 default_category = main_view_category if main_view_category in category_options else (main_category_select if main_category_select in category_options else "All")
 view_cat = st.selectbox("카테고리 필터", category_options, index=category_options.index(default_category))
 
-# ...existing code...
-
-# 주차 슬라이더 (1~17) — 메인 페이지에서 선택한 주차를 기본으로 반영
+# 주차 슬라이더 (1~17)
 min_week, max_week = 1, 17
 data_weeks = df_all["week"].dropna().astype(int) if "week" in df_all.columns else pd.Series(dtype=int)
 data_min = int(data_weeks.min()) if not data_weeks.empty else min_week
@@ -151,7 +177,7 @@ try:
 except Exception:
     main_week_int = None
 
-# 슬라이더 기본값 결정: main_week_int가 유효하면 그 주차로 고정, 아니면 데이터 범위 사용
+# 슬라이더 기본값 결정
 if main_week_int is not None and min_week <= main_week_int <= max_week:
     default_start = default_end = main_week_int
 else:
@@ -161,13 +187,11 @@ else:
 # 별도 키를 사용해 슬라이더 상태 관리 (teacher_week_range)
 week_range = st.slider("주차 범위", min_week, max_week, (default_start, default_end), key="teacher_week_range")
 
-# 안전 보정: 만약 main_week_int가 존재하고 현재 슬라이더가 그 주차를 포함하지 않으면 강제 포함
+# 안전 보정: main_week_int 강제 포함
 if main_week_int is not None:
     if week_range[0] > main_week_int or week_range[1] < main_week_int:
         st.session_state["teacher_week_range"] = (main_week_int, main_week_int)
         week_range = (main_week_int, main_week_int)
-
-# ...existing code continues (필터 적용 등) ...
 
 # 필터 적용
 df_filtered = df_all.copy()
@@ -176,8 +200,6 @@ if class_sel:
 if view_cat and view_cat != "All":
     df_filtered = df_filtered[df_filtered["category"] == view_cat]
 df_filtered = df_filtered[df_filtered["week"].between(week_range[0], week_range[1])]
-
-
 
 if df_filtered.empty:
     st.info("필터 조건에 맞는 항목이 없습니다.")
@@ -203,7 +225,7 @@ else:
     table_df.index.name = "주차"
     st.dataframe(table_df, use_container_width=True)
 
-    # 선택한 주차 범위에 속하는 원본 제출 항목 모두 표시
+# 선택한 주차 범위에 속하는 원본 제출 항목 모두 표시
 st.markdown("#### 선택한 주차에 제출된 원본 항목 (모두 보기)")
 raw_cols = ["ts", "category", "keyword", "note", "grade", "class_num", "student_no", "student_name"]
 df_display = df_filtered.copy()
@@ -219,33 +241,24 @@ if not df_display.empty:
         "student_name": "이름"
     }).sort_values("제출시간", ascending=False).reset_index(drop=True)
 
-    # 인덱스를 1부터 시작하고, 인덱스 이름을 'No'로
     df_display.index = range(1, len(df_display) + 1)
     df_display.index.name = "No"
 
-    # ✅ 표 컬럼 순서 지정 (인덱스 'No'는 자동으로 가장 왼쪽에 표시됨)
     cols_order = ["학년", "반", "번호", "이름", "카테고리", "키워드", "부연설명", "제출시간"]
     st.dataframe(df_display[cols_order], use_container_width=True)
 else:
     st.info("필터된 항목이 없습니다.")
 
-
-# 반별 제출량 합계 그래프 (가로축: 1반 ~ 12반)
-# -------------------------
+# 반별 제출량 합계 그래프
 st.markdown("---")
-
 st.markdown("### 🧮 반별 제출량 합계")
 
-
-# 1~12반을 보장하도록 집계 및 0 채우기
 counts_series = df_filtered.groupby("class_num").size()
 all_classes = list(range(1, 13))
 counts_full = counts_series.reindex(all_classes, fill_value=0).reset_index()
 counts_full.columns = ["class_num", "count"]
 counts_full["class_str"] = counts_full["class_num"].astype(str) + "반"
 
-# ...existing code...
-# 막대 그래프 (색상 그라데이션, 라벨, 툴팁) — Y축 정수 포맷 적용
 bar = (
     alt.Chart(counts_full)
     .mark_bar(cornerRadius=6)
@@ -260,17 +273,13 @@ bar = (
     )
     .properties(height=320)
 )
-
 labels = alt.Chart(counts_full).mark_text(dy=-8, color="#222", fontSize=12).encode(
     x=alt.X("class_str:N", sort=[f"{i}반" for i in all_classes]),
     y=alt.Y("count:Q", axis=alt.Axis(format="d", tickMinStep=1)),
     text=alt.Text("count:Q", format="d")
 )
-
 st.altair_chart(bar + labels, use_container_width=True)
-# ...existing code...
 
-# ...existing code...
 def _clear_board_data():
     """DB의 keywords 테이블을 비우고 관련 session_state 키를 초기화합니다."""
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -278,12 +287,10 @@ def _clear_board_data():
     try:
         cur.execute("DELETE FROM keywords")
         conn.commit()
-        # VACUUM으로 파일 크기 줄이기(선택)
         cur.execute("VACUUM")
     finally:
         conn.close()
 
-    # 세션 상태 초기화: 필요하면 키를 추가/제거
     keys_to_clear = [
         "week_select", "class_select", "category_select", "view_category",
         "teacher_week_range", "quiz_data", "answers", "submitted"
@@ -292,7 +299,6 @@ def _clear_board_data():
         if k in st.session_state:
             del st.session_state[k]
 
-# 관리자용: 실수 방지 확인 UI
 st.markdown("---")
 with st.expander("⚠️ 보드 초기화 (관리자 전용)", expanded=False):
     st.warning("모든 제출 데이터가 완전히 삭제됩니다. 되돌릴 수 없습니다.")
@@ -301,7 +307,9 @@ with st.expander("⚠️ 보드 초기화 (관리자 전용)", expanded=False):
         if confirm_text.strip() == "초기화":
             _clear_board_data()
             st.success("초기화 완료 — 페이지가 다시 로드됩니다.")
-            st.experimental_rerun()
+            try:
+                st.rerun()
+            except Exception:
+                st.experimental_rerun()
         else:
             st.error("확인 문구가 일치하지 않습니다. '초기화' 를 입력해야 합니다.")
-# ...existing code...
