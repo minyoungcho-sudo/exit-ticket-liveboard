@@ -177,21 +177,31 @@ try:
 except Exception:
     main_week_int = None
 
-# 슬라이더 기본값 결정
-if main_week_int is not None and min_week <= main_week_int <= max_week:
-    default_start = default_end = main_week_int
-else:
-    default_start = max(min_week, data_min)
-    default_end = min(max_week, data_max)
+# 슬라이더 기본값 결정 및 세션 초기화 (🚨 수정된 부분)
+if "teacher_week_range" not in st.session_state:
+    if main_week_int is not None and min_week <= main_week_int <= max_week:
+        # main_week_int가 유효하면 해당 주차 하나로 기본값 설정
+        default_start = default_end = main_week_int
+    else:
+        # 그렇지 않으면 데이터 전체 범위로 기본값 설정
+        default_start = max(min_week, data_min)
+        default_end = min(max_week, data_max)
+    st.session_state["teacher_week_range"] = (default_start, default_end) # 👈 첫 실행 시에만 기본값 저장
 
-# 별도 키를 사용해 슬라이더 상태 관리 (teacher_week_range)
-week_range = st.slider("주차 범위", min_week, max_week, (default_start, default_end), key="teacher_week_range")
+# 별도 키를 사용해 슬라이더 상태 관리
+week_range = st.slider(
+    "주차 범위", 
+    min_week, 
+    max_week, 
+    st.session_state["teacher_week_range"], # 👈 초기화된 세션 값을 사용
+    key="teacher_week_range"
+)
 
-# 안전 보정: main_week_int 강제 포함
-if main_week_int is not None:
-    if week_range[0] > main_week_int or week_range[1] < main_week_int:
-        st.session_state["teacher_week_range"] = (main_week_int, main_week_int)
-        week_range = (main_week_int, main_week_int)
+# 🚨 강제 고정 로직 삭제!
+# if main_week_int is not None:
+#     if week_range[0] > main_week_int or week_range[1] < main_week_int:
+#         st.session_state["teacher_week_range"] = (main_week_int, main_week_int)
+#         week_range = (main_week_int, main_week_int)
 
 # 필터 적용
 df_filtered = df_all.copy()

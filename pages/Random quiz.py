@@ -191,7 +191,7 @@ def generate_quiz_with_ai(keyword_list_str, num_questions):
     ---
 
     요구사항:
-    1. 각 퀴즈는 질문, 4개의 보기, 정답(보기 번호 1~4)을 포함해야 합니다.
+    1. 각 퀴즈는 질문, 4개의 보기, 정답(보기 번호 1~4)을 포함해야 하며, 질문은 한국어이고 보기 문장은 모두 영어 문장이어야 합니다.
     2. 생성된 퀴즈는 반드시 다음 JSON 형식으로만 출력해야 합니다.
 
         {{
@@ -298,11 +298,15 @@ if st.button("✨ 새 퀴즈 생성 ✨", use_container_width=True, type="primar
     if not unique_keywords:
         st.info("아직 제출된 키워드가 없어 퀴즈를 생성할 수 없습니다.")
     else:
+        # **👉 캐시를 명시적으로 지우는 코드 추가**
+        generate_quiz_with_ai.clear() 
+        
         st.session_state["quiz_data"] = None
         st.session_state["answers"] = {}
         st.session_state["submitted"] = False
         keyword_list_str = ", ".join(unique_keywords)
-        quiz_json = generate_quiz_with_ai(keyword_list_str, num_questions)
+        # 이제 num_questions이 변경되면 캐시가 무효화되므로 새로운 퀴즈가 생성됩니다.
+        quiz_json = generate_quiz_with_ai(keyword_list_str, num_questions) 
         st.session_state["quiz_data"] = quiz_json
         st.rerun()
 
@@ -387,7 +391,7 @@ if st.session_state["quiz_data"]:
             if user_answer_num == q['answer']:
                 correct_count += 1
         score = (correct_count / total) * 100
-        st.metric(label="최종 점수", value=f"{score:.1f}점", delta=f"{correct_count} / {total} 문제 정답")
+        st.metric(label="최종 점수", value=f"{score:.0f}점", delta=f"{correct_count} / {total} 문제 정답") 
         st.balloons()
 
     # 흰색 컨테이너 (modern-card) 끝 태그 제거

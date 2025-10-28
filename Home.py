@@ -1,7 +1,4 @@
 # modern_ui_page1.py — Streamlit page with refined UI (all original features preserved)
-# NOTE: Drop this file in place of your current Page 1 code.
-
-# modern_ui_page1.py — bright tone but keep all modern UI styling
 
 import streamlit as st
 import sqlite3
@@ -34,13 +31,13 @@ if _FONT_FILE:
     _css = f"""
     <style>
       :root {{
-        --bg-color: #f9fafb; /* light gray background */
+        --bg-color: #f9fafb;
         --card-bg: #ffffff;
         --card-bd: #e5e7eb;
         --text-main: #1f2937;
         --text-dim: #6b7280;
-        --brand-1: #6366f1; /* indigo-500 */
-        --brand-2: #06b6d4; /* cyan-500 */
+        --brand-1: #6366f1;
+        --brand-2: #06b6d4;
         --radius-xxl: 18px;
         --radius-lg: 12px;
       }}
@@ -92,7 +89,6 @@ if _FONT_FILE:
         color: var(--brand-1);
       }}
 
-      /* Buttons */
       .stButton > button {{
         border-radius: var(--radius-lg) !important;
         border: 1px solid #cbd5e1 !important;
@@ -105,7 +101,6 @@ if _FONT_FILE:
       .stButton > button:hover {{ transform: translateY(-1px); box-shadow: 0 8px 20px rgba(99,102,241,0.25) !important; }}
       .stButton > button:active {{ transform: translateY(0); filter: brightness(.97); }}
 
-      /* Inputs */
       label {{ color: var(--text-dim) !important; font-weight: 600 !important; }}
       .stTextInput > div > div > input,
       .stTextArea textarea,
@@ -117,7 +112,6 @@ if _FONT_FILE:
         border: 1px solid #d1d5db !important;
       }}
 
-      /* Chips */
       .chip {{
         display:inline-flex; align-items:center; gap:.35rem; padding:.25rem .6rem; 
         border-radius: 999px; font-size: 12px; border:1px solid #bae6fd;
@@ -125,10 +119,8 @@ if _FONT_FILE:
         color:#0369a1;
       }}
 
-      /* Divider */
       .soft-divider {{ height:1px; background: linear-gradient(90deg, transparent, #d1d5db, transparent); margin: 10px 0 18px 0; }}
 
-      /* Wordcloud buttons */
       div[data-testid="column"] .stButton > button {{
         width: 100% !important; display: inline-flex; align-items: center; justify-content: center;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 6px 10px; min-height: 40px;
@@ -137,7 +129,6 @@ if _FONT_FILE:
       div[data-testid="column"] {{ flex: 1 1 0%; min-width: 0; }}
       div[data-testid="column"] .stButton > button > span {{ display: inline-block; max-width: 100%; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
 
-      /* Footer */
       .footer {{
         margin-top: 28px; color: var(--text-dim); font-size: 12px; text-align:center;
       }}
@@ -175,19 +166,32 @@ def init_db():
 
 conn = init_db()
 
+# ✅ FIX: DB에 한 줄 추가하는 함수 정의
+def add_keyword(keyword, category, grade, class_num, student_no, student_name, note, week):
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with conn:
+        conn.execute(
+            """
+            INSERT INTO keywords (keyword, category, grade, class_num, student_no, student_name, note, ts, week)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (keyword, category, grade, class_num, student_no, student_name, note, ts, week),
+        )
+
 # Student Info Card
 st.markdown("<div class='modern-card'><div class='card-title'>🧑‍🎓 학생 정보</div>질문자의 이름은 공개되지 않습니다. 마음 편히 질문하세요 😊", unsafe_allow_html=True)
 col_g, col_c, col_n, col_name = st.columns([1,1,1,3])
-with col_g:
-    grade = st.selectbox("학년", ["2학년"])
-with col_c:
-    class_sel = st.selectbox("반", [f"{i}반" for i in range(1,13)])
-with col_n:
-    num_sel = st.selectbox("번호", [f"{i}번" for i in range(1,33)])
-with col_name:
-    student_name = st.text_input("이름", placeholder="이름 입력")
 
-# 이하 기존 기능 동일 (카테고리/주차/질문입력/제출/DB저장)
+# ✅ FIX: submit_callback에서 읽는 key들과 일치하도록 key 지정
+with col_g:
+    st.selectbox("학년", ["2학년"], key="grade_select")
+with col_c:
+    st.selectbox("반", [f"{i}반" for i in range(1,13)], key="class_select")
+with col_n:
+    st.selectbox("번호", [f"{i}번" for i in range(1,33)], key="student_no_select")
+with col_name:
+    st.text_input("이름", placeholder="이름 입력", key="student_name")
+
 # -----------------------------
 # CATEGORY & WEEK CARD
 # -----------------------------
@@ -202,9 +206,15 @@ st.markdown("""
 with st.container():
     col_cat, col_week = st.columns([2,1])
     with col_cat:
-        category = st.selectbox("입력할 카테고리 선택", ["Vocabulary", "Grammar", "Reading", "Else"], key="category_select")
+        st.selectbox("입력할 카테고리 선택", ["Vocabulary", "Grammar", "Reading", "Else"], key="category_select")
     with col_week:
-        week = st.selectbox("수업 주차", list(range(1, 18)), index=st.session_state.get("week_select", 1)-1, format_func=lambda x: f"{x}주차", key="week_select")
+        st.selectbox(
+            "수업 주차",
+            list(range(1, 18)),
+            index=(st.session_state.get("week_select", 1) - 1),
+            format_func=lambda x: f"{x}주차",
+            key="week_select"
+        )
 
 # -----------------------------
 # QUESTION INPUT CARD
@@ -223,14 +233,14 @@ if st.session_state.get("category_select") == "Reading":
     st.markdown("질문할 문장 번호를 선택하세요.")
     c1, c2 = st.columns([1,1])
     with c1:
-        reading_passage = st.selectbox("지문 번호", list(range(1,21)), index=st.session_state.get("reading_passage",1)-1, key="reading_passage", format_func=lambda x: f"{x}번 지문")
+        st.selectbox("지문 번호", list(range(1,21)), index=st.session_state.get("reading_passage",1)-1, key="reading_passage", format_func=lambda x: f"{x}번 지문")
     with c2:
-        reading_sentence = st.selectbox("문장 번호", list(range(1,21)), index=st.session_state.get("reading_sentence",1)-1, key="reading_sentence", format_func=lambda x: f"{x}번 문장")
+        st.selectbox("문장 번호", list(range(1,21)), index=st.session_state.get("reading_sentence",1)-1, key="reading_sentence", format_func=lambda x: f"{x}번 문장")
     st.session_state[input_key] = ""
 else:
-    keyword = st.text_input("질문 키워드 입력", key=input_key, placeholder="예: present perfect, 가정법, collocation …")
+    st.text_input("질문 키워드 입력", key=input_key, placeholder="예: present perfect, 가정법, collocation …")
 
-note = st.text_area(
+st.text_area(
     "부연 설명 (문장으로 입력)",
     key="note_input",
     height=100,
@@ -240,7 +250,6 @@ note = st.text_area(
 # -----------------------------
 # SUBMIT AREA
 # -----------------------------
-
 def submit_callback():
     cat = st.session_state.get("category_select", "Else")
     if cat == "Reading":
@@ -264,9 +273,9 @@ def submit_callback():
         student_no = 1
 
     student_name_val = st.session_state.get("student_name", "").strip()
+    week_val = st.session_state.get("week_select", None)
 
     if kw:
-        week_val = st.session_state.get("week_select", None)
         add_keyword(kw, cat, grade_val, class_num, student_no, student_name_val, note_text, week_val)
         st.session_state[input_key] = ""
         st.session_state["note_input"] = ""
@@ -281,9 +290,10 @@ with c1:
     st.button("제출하기", on_click=submit_callback, use_container_width=True, type="primary")
 with c2:
     if st.button("📊 실시간 분석 보러가기", use_container_width=True):
+        # 페이지 파일명은 프로젝트 구조에 맞게 조정하세요.
         st.switch_page("pages/Data visualization.py")
 
-# Feedback toast (kept)
+# Feedback toast
 if st.session_state.get("msg"):
     if st.session_state.get("msg_type") == "success":
         st.success(st.session_state["msg"])
