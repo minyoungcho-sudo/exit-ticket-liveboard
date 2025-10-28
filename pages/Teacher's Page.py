@@ -188,20 +188,18 @@ if "teacher_week_range" not in st.session_state:
         default_end = min(max_week, data_max)
     st.session_state["teacher_week_range"] = (default_start, default_end) # 👈 첫 실행 시에만 기본값 저장
 
-# 별도 키를 사용해 슬라이더 상태 관리
+# 별도 키를 사용해 슬라이더 상태 관리 (🚨 value 인자를 제거)
 week_range = st.slider(
     "주차 범위", 
     min_week, 
     max_week, 
-    st.session_state["teacher_week_range"], # 👈 초기화된 세션 값을 사용
-    key="teacher_week_range"
+    key="teacher_week_range" # 👈 key만 남겨서 Session State의 값을 사용하도록 함
+    # st.session_state["teacher_week_range"] 이 값은 삭제!
 )
 
-# 🚨 강제 고정 로직 삭제!
-# if main_week_int is not None:
-#     if week_range[0] > main_week_int or week_range[1] < main_week_int:
-#         st.session_state["teacher_week_range"] = (main_week_int, main_week_int)
-#         week_range = (main_week_int, main_week_int)
+# 필터링을 위해 위젯의 현재 값 가져오기
+# week_range 변수는 st.session_state["teacher_week_range"]와 동일합니다.
+week_range = st.session_state["teacher_week_range"]
 
 # 필터 적용
 df_filtered = df_all.copy()
